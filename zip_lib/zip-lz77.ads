@@ -1,5 +1,4 @@
---  Experimental generic LZ77 encoder, based on LZHUF by OKUMURA & YOSHIZAKI
---  Here the Huffman code is used only to find quickly matching patterns.
+--  Generic LZ77 encoder.
 
 generic
 
@@ -8,10 +7,12 @@ generic
   Look_Ahead         : Integer := 65;
   Threshold          : Integer := 2;
 
-  -- Input:
+  Method: LZ77_method;
+
+  -- Input of data:
   with function  Read_byte return Byte;
   with function  More_bytes return Boolean;
-  -- Output:
+  -- Output of LZ-compressed data:
   with procedure Write_byte( b: Byte );
   with procedure Write_code( distance, length: Integer );
 

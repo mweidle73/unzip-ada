@@ -9,10 +9,12 @@ file format. It supplies:
  - decompression for the following sub-formats ("methods"):
      Store, Reduce, Shrink (LZW), Implode, Deflate, BZip2 and LZMA
  - encryption and decryption (portable Zip 2.0 encryption scheme)
- - unconditional portability (see below a list of in-use platforms)
+ - unconditional portability - within limits of compiler's provided
+     integer types and target architecture capacity; see below a list
+	 of in-use platforms
  - input (archive to decompress or data to compress) can be any data stream
  - output (archive to build or data to extract) can be any data stream
- - Zip_info and Zip_Create_info to handle quickly and easily archives
+ - types Zip_info and Zip_Create_info to handle archives quickly and easily 
  - cross format compatibility with the most various tools and file formats
      based on the Zip format: 7-zip, Info-Zip's Zip, WinZip, PKZip, Java's JARs,
      OpenDocument files, MS Office 2007+, Nokia themes, and many others
@@ -20,22 +22,28 @@ file format. It supplies:
  - task safety: this library can be used ad libitum in parallel processing
  - endian-neutral I/O
 
-The full source is in Ada: pure Ada, not even a single dependency
-to a compiler, a CPU architecture, an OS or an external package or library!
+The full source is in Ada: pure Ada 95, not even a single dependency
+to a compiler, a CPU architecture, an OS or an external package or library.
 The price for the *unconditional* portability of Zip-Ada hold in these details:
   - archive creation: attributes (read-only, system etc.) are not stored
   - archive extraction: time stamps and attributes of decompressed files
       are not restored as original
 That's it!
 
-For details about the code's history, read the file unzip.ads.
+Note however that some compilers may not have the necessary integer types
+for compiling Zip-Ada; other (like the old 7.2.2 version of ObjectAda of 2002)
+won't compile correctly some parts or crash during the build. Still, a list of
+more than 25 successfully tested OS-CPU-Compiler combinations can be found below
+under "note on portability".
 
-Licence / Warning / Legal stuff
+For details about the code's history, read the files zip.ads and unzip.ads.
+
+License / Warning / Legal stuff
 ===============================
 
 There is NO WARRANTY in the Zip-Ada software.
 Zip-Ada is licensed under the MIT License.
-You find the full licence and copyright notice in zip.ads.
+You find the full license and copyright notice in zip.ads.
 
 Contents
 ========
@@ -92,19 +100,20 @@ Contents
   and remove the line with Ada_Directories_Extensions to get a totally portable
   tool using only Zip-Ada and Ada standard libraries.
 
-* To build the tests, simply "gnatmake" or "adamake" them !
+* To build the tests, simply "gprbuild" or "adabuild" them.
   You can also start "make_za" for minimal effort with GNAT.
 
   There are also the following project files for building them
   with various systems:
   - ZipAda.gpr for GNAT or the GNAT Programming Studio
-  - ZipAda_ObjectAda.prj for Aonix's ObjectAda 7.2.2 and later  
+  - ZipAda_ObjectAda.prj for ObjectAda 7.2.2 and later (this is the
+      project file for the ObjectAda's IDE)
   - UnZipAda_A#.sln for Microsoft Visual Studio and A# (uses files
       UnZipAda_A#.adaproj and UnZipAda_Asharp.gpr)
 
 * The file extensions of source files are GNAT-ish:
-  .ads is specification; .adb is body
-  Rename the files if necessary, for other compilers.
+  .ads is specification; .adb is body.
+  Rename the files if necessary.
 
 * You may wish to force text-mode and lower case names (Unix)
   by using unzip's "-aa" and "-L" options: "unzip -aa -L zipada*.zip".
@@ -120,6 +129,14 @@ packages.
 Latest changes (-!- marks an improvement which brings an incompatibility)
 =========================================================================
 
+* Changes in '50', 31-Mar-2016:
+  - Zip.Compress.Shrink is slightly faster
+  - Zip.Compress.Deflate has new compression features:
+    - Deflate_Fixed is much faster, with slightly better compression
+    - Deflate_1 was added: strength similar to zlib, level 6
+    - Deflate_2 was added: strength similar to zlib, level 9
+    - Deflate_3 was added: strength similar to 7-Zip, method=deflate, level 5
+
 * Changes in '49', 21-Mar-2015:
   - encryption implemented (portable Zip 2.0 encryption scheme)
 
@@ -134,7 +151,7 @@ Latest changes (-!- marks an improvement which brings an incompatibility)
   - Removed usage of signed integers for stream sizes, increasing
       limits from 2 GB to 4 GB on 32-bit targets
   - Added Zip.Traverse_Unicode
-  - UnZip: does not attempt to create empty pathes or drives
+  - UnZip: does not attempt to create empty paths or drives
 
 * Changes in '45', 22-Dec-2012:
   - Decryption's password check also working for archives encrypted
@@ -159,7 +176,7 @@ Latest changes (-!- marks an improvement which brings an incompatibility)
       informations about encoding.
 
 * Changes in '44', 3-Nov-2012:
-  - The libary provides now a complete toolset for managing Zip archives
+  - The library provides now a complete toolset for managing Zip archives
       (creating, updating, extracting)
   -!- Zip_Streams: All methods now with pointer-free profiles
   - Zip.Create:
@@ -274,7 +291,6 @@ Latest changes (-!- marks an improvement which brings an incompatibility)
 
 * Changes in '24', 27-Mar-2008:
   - Added case-sensitivity to UnZip.Streams.Open(...)
-  - tl parameter is 'out' from 'in out'
   - UnZip.Decompress: hinted compressed size limited to Type'Last-2
       to avoid modular type wraparound
   - Replaced loop in UnZip.Streams.Read by slice copies
@@ -440,23 +456,14 @@ Open bugs (as of v.49)
     
 To do
 =====
-  - more profiling - see prof_za.cmd and test/prof.cmd
-  - use tasking for decoding in UnZip.Streams, instead of storing
-      the whole decoded data in a buffer (this exercise may be difficult!)
-  - a Freshen_Zip tool that freshen files from an archive, or files
-      to an archive, or both (i.e. like "zip -f" and/or "unzip -f" combined);
-      possible with Zip.Create's Add_Compressed_Stream.
 
-To do further
-=============
-  - Make a public access to UnZip.Decompress, as a zlib proxy
-      (see the Zada project)
-  - Zip.Compress with a strong compression - LZMA for instance ?
+Topics are in file za_todo.txt
 
 Note on portability
 ===================
 
-Portability is unconditional and unrestricted!
+Portability is unconditional and unrestricted: no need of preprocessing,
+conditional compilation, magic folders...
 If you still have doubts, here is a list of OS/CPU/Compiler
 combinations where Zip-Ada has been reported to be in use:
 
@@ -482,7 +489,7 @@ FreeBSD                     Intel x64 (64 bit)
 Android 2.3+                ARM
 
 MS Windows 95,98;
-           NT,2K,XP         Intel x86 (32 bit)  Atego - ObjectAda
+           NT,2K,XP         Intel x86 (32 bit)  PTC - ObjectAda
 
 MS Windows 95,98;
            NT,2K,XP         Intel x86 (32 bit)  RR Software - Janus/Ada

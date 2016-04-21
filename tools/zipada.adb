@@ -202,8 +202,13 @@ procedure ZipAda is
           end case;
         elsif opt(opt'First..opt'First+1) = "es" then
           method:= Shrink;
-        elsif opt(opt'First..opt'First+3) = "edf " then
-          method:= Deflate_Fixed;
+        elsif opt(opt'First..opt'First+1) = "ed" then
+          case opt(opt'First+2) is
+            when 'f'    => method:= Deflate_Fixed;
+            when '1'    => method:= Deflate_1;
+            when '2'    => method:= Deflate_2;
+            when others => method:= Deflate_3;
+          end case;
         elsif opt(opt'First..opt'First+3) = "dir " then
           scan:= Scan_mode'Max(scan, files_and_dirs);
         elsif opt(opt'First..opt'First+1) = "r " then
@@ -235,7 +240,7 @@ procedure ZipAda is
       end if;
       Put_Line("Creating archive " & arg_zip);
       T0:= Clock;
-      Create(Info, MyStream'Unchecked_Access, arg_zip, method);
+      Create(Info, MyStream'Unchecked_Access, arg_zip, method, Zip.error_on_duplicate);
     else -- First real argument has already been used for archive's name
       if To_Upper(arg) = To_Upper(Name(Info)) then
         Put_Line("  ** Warning: skipping archive's name as entry: " & arg);
@@ -274,6 +279,7 @@ begin
     Put_Line("options:  -erN   : use the 2-pass ""reduce"" method, factor N=1..4");
     Put_Line("          -es    : ""shrink"" (LZW algorithm, default)");
     Put_Line("          -edf   : ""deflate"", with one fixed block");
+    Put_Line("          -edN   : ""deflate"", ""dynamic"" compression, strength N=1..3");
     Put_Line("          -dir   : name(s) may be also directories,");
     Put_Line("                      whose contents will be archived");
     Put_Line("          -r     : same as ""-dir"", but recursive");

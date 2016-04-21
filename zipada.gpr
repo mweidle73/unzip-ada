@@ -27,7 +27,9 @@ project ZipAda is
      "lzma_dec", --  The LZMA Reference Decoder
      "lzma_enc", --  Experimental LZMA encoder
      "test_lz_scramble",  --  Test LZ_Scramble
-     "random_data.adb"    --  Produces n bytes of pseudo-random data
+     "test_llhc",         --  Test for Length_limited_Huffman_code_lengths
+     "random_data.adb",   --  Produces n bytes of pseudo-random data
+     "lz77_stats.adb"
      -- "demo_csv_gnat.ads",
      -- "unzipada.adb", "uza_gnat.ads"
    );
@@ -78,13 +80,29 @@ project ZipAda is
       case Build_Mode is
 
          when "Debug" =>
-            for Default_Switches ("ada") use ("-gnat05", "-gnatf", "-gnato", "-fstack-check", "-g", "-gnatwa", "-gnatVa", "-gnatyhiknp", "-gnatec../debug.pra");
+            for Default_Switches ("ada") use (
+              "-gnat05", "-gnatf", "-gnato", 
+              "-fstack-check", "-g", "-gnatwa", "-gnatVa", "-gnatyhiknp", 
+              "-gnatec../debug.pra"
+              );
 
          when "Optimize" =>
-            for Default_Switches ("ada") use ("-gnat05", "-O2", "-gnatpn", "-funroll-loops", "-fpeel-loops", "-funswitch-loops", "-ftracer", "-fweb", "-frename-registers", "-ffunction-sections", "-gnatec../za_elim.pra");
+            for Default_Switches ("ada") use (
+              "-gnat05", "-O2", "-gnatp", "-gnatn", 
+              "-funroll-loops", "-fpeel-loops", "-funswitch-loops", "-ftracer", "-fweb", "-frename-registers", 
+              "-fpredictive-commoning", "-fgcse-after-reload", "-ftree-vectorize", "-fipa-cp-clone",
+              "-ffunction-sections", 
+              "-gnatec../za_elim.pra"
+              );
 
          when "Profiling" =>
-            for Default_Switches ("ada") use ("-gnat05", "-O2", "-gnatp",  "-fno-inline", "-funroll-loops", "-fpeel-loops", "-funswitch-loops", "-ftracer", "-fweb", "-frename-registers", "-g", "-pg");
+            for Default_Switches ("ada") use (
+              "-gnat05", "-O2", "-gnatp",  
+              "-fno-inline", 
+              "-funroll-loops", "-fpeel-loops", "-funswitch-loops", "-ftracer", "-fweb", "-frename-registers",
+              "-fpredictive-commoning", "-fgcse-after-reload", "-ftree-vectorize", "-fipa-cp-clone",
+              "-g", "-pg"
+              );
       end case;
    end Compiler;
 

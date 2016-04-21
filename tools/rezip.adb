@@ -4,27 +4,12 @@
 --                   Core moved to Rezip_lib
 --  Author:          Gautier de Montmollin
 ------------------------------------------------------------------------------
---
--- To do:
---  * In order to facilitate customization, ReZip could have a config file (
---    http://sf.net/projects/ini-files/ ) to store external packer program
---    names. See ZipMax as an example...
---
--- External programs used (feel free to customize/add/remove):
---   7-Zip, KZip, Zip (info-zip), DeflOpt
---   Web URL's: see Zipper_specification below or run ReZip without arguments.
 
-
-with Comp_Zip_Prc;
+with Rezip_lib, Comp_Zip_Prc, Zip;
 
 with Ada.Command_Line;                  use Ada.Command_Line;
 with Ada.Text_IO;                       use Ada.Text_IO;
 with Ada.Characters.Handling;           use Ada.Characters.Handling;
-
-
-with Zip;
-
-with Rezip_lib;
 
 procedure ReZip is
 
@@ -121,8 +106,8 @@ begin
       arg_rezip: constant String:= arg_nozip & ".repacked." & ext;
       arg_rpt  : constant String:= arg_nozip & ".ReZip.html";
       arg_log  : constant String:= arg_nozip & ".ReZip.log";
-      info_zip,
-      info_rezip : Zip.Zip_info;
+      info_original_zip,
+      info_rezipped_zip : Zip.Zip_info;
     begin
       if arg(arg'First) = '-' or arg(arg'First) = '/' then
         -- Options
@@ -160,9 +145,9 @@ begin
           html_report       => arg_rpt
         );
         if compare then
-          Zip.Load( info_zip, arg_zip );
-          Zip.Load( info_rezip, arg_rezip );
-          Comp_Zip_Prc(info_zip, info_rezip);
+          Zip.Load( info_original_zip, arg_zip );
+          Zip.Load( info_rezipped_zip, arg_rezip );
+          Comp_Zip_Prc(info_original_zip, info_rezipped_zip, 0);
         end if;
       else
         Ada.Text_IO.Put_Line("  ** Error: archive not found: " & arg_zip);

@@ -1,15 +1,18 @@
 with Ada.Exceptions;
 with Ada.Unchecked_Deallocation;
 with Ada.Text_IO;
+
 with Interfaces;                        use Interfaces;
-with Ada.Calendar;
 
 package body Zip.Create is
 
-   procedure Create(Info        : out Zip_Create_info;
-                    Z_Stream    : in Zipstream_Class_Access;
-                    Name        : String;
-                    Compress    : Zip.Compress.Compression_Method:= Zip.Compress.Shrink) is
+   procedure Create(Info          : out Zip_Create_info;
+                    Z_Stream      : in Zipstream_Class_Access;
+                    Name          : String;
+                    Compress      : Zip.Compress.Compression_Method:= Zip.Compress.Shrink;
+                    Duplicates    : Duplicate_name_policy:= admit_duplicates
+   )
+   is
    begin
       Info.Stream := Z_Stream;
       Info.Compress := Compress;
@@ -22,7 +25,7 @@ package body Zip.Create is
       if Z_Stream.all in File_Zipstream'Class then
         Zip_Streams.Create (File_Zipstream(Z_Stream.all), Zip_Streams.Out_File);
       end if;
-      Info.Creation_time:= Convert(Ada.Calendar.Clock);
+      Info.Duplicates:= Duplicates;
    end Create;
 
    function Is_Created(Info: Zip_Create_info) return Boolean is
@@ -30,7 +33,7 @@ package body Zip.Create is
       return Info.Stream /= null;
    end Is_Created;
 
-   procedure Set(Info       : out Zip_Create_info;
+   procedure Set(Info       : in out Zip_Create_info;
                  New_Method : Zip.Compress.Compression_Method)
    is
    begin
@@ -44,8 +47,6 @@ package body Zip.Create is
 
    procedure Dispose is new
      Ada.Unchecked_Deallocation (Dir_entries, Pdir_entries);
-   procedure Dispose is new
-     Ada.Unchecked_Deallocation (String, p_String);
 
    procedure Resize (A    : in out Pdir_entries;
                      Size : Integer) is
@@ -98,6 +99,41 @@ package body Zip.Create is
       end;
    end Add_catalogue_entry;
 
+   --  This is just for detecting duplicates
+   procedure Insert_to_name_dictionary(file_name: String; node: in out p_Dir_node) is
+   begin
+     if node = null then
+       node:= new Dir_node'
+         ( (name_len          => file_name'Length,
+            left              => null,
+            right             => null,
+            file_name         => file_name)
+         );
+     elsif file_name > node.file_name then
+       Insert_to_name_dictionary( file_name, node.right );
+     elsif file_name < node.file_name then
+       Insert_to_name_dictionary( file_name, node.left );
+     else
+       --  Name already registered
+       raise Duplicate_name;
+     end if;
+   end Insert_to_name_dictionary;
+
+   procedure Clear_name_dictionary(Info : in out Zip_Create_info) is
+     procedure Clear( p: in out p_Dir_node ) is
+        procedure Dispose is new Ada.Unchecked_Deallocation (Dir_node, p_Dir_node);
+     begin
+       if p /= null then
+         Clear(p.left);
+         Clear(p.right);
+         Dispose(p);
+         p:= null;
+       end if;
+     end Clear;
+   begin
+     Clear(Info.dir);
+   end Clear_name_dictionary;
+   
    procedure Add_Stream (Info     : in out Zip_Create_info;
                          Stream   : in out Root_Zipstream_Type'Class;
                          Password : in     String:= "")
@@ -126,7 +162,10 @@ package body Zip.Create is
           entry_name(i):= '/';
         end if;
       end loop;
-      --
+      if Info.Duplicates = error_on_duplicate then
+        --  Check for duplicates; raises Duplicate_name in this case.
+        Insert_to_name_dictionary (entry_name, Info.dir);
+      end if;
       Add_catalogue_entry (Info);
       Last:= Info.Last_entry;
       declare
@@ -230,28 +269,39 @@ package body Zip.Create is
    procedure Add_String (Info              : in out Zip_Create_info;
                          Contents          : String;
                          Name_in_archive   : String;
+                         --   Name_UTF_8_encoded = True if Name is actually UTF-8 encoded (Unicode)
                          Name_UTF_8_encoded: Boolean:= False;
-                         -- True if Name is actually UTF-8 encoded (Unicode)
-                         Password          : String:= ""
+                         Password          : String:= "";
+                         --  Time stamp for this entry, e.g. Zip.Convert(Ada.Calendar.Clock)
+                         Creation_time     : Zip.Time:= default_time
    )
    is
    begin
-     Add_String(Info, To_Unbounded_String(Contents), Name_in_archive, Name_UTF_8_encoded, Password);
+     Add_String(
+       Info               => Info,
+       Contents           => To_Unbounded_String(Contents),
+       Name_in_archive    => Name_in_archive,
+       Name_UTF_8_encoded => Name_UTF_8_encoded,
+       Password           => Password,
+       Creation_time      => Creation_time
+     );
    end Add_String;
 
    procedure Add_String (Info              : in out Zip_Create_info;
                          Contents          : Unbounded_String;
                          Name_in_archive   : String;
+                         --   Name_UTF_8_encoded = True if Name is actually UTF-8 encoded (Unicode)
                          Name_UTF_8_encoded: Boolean:= False;
-                         -- True if Name is actually UTF-8 encoded (Unicode)
-                         Password          : String:= ""
+                         Password          : String:= "";
+                         --  Time stamp for this entry, e.g. Zip.Convert(Ada.Calendar.Clock)
+                         Creation_time     : Zip.Time:= default_time
    )
    is
      temp_zip_stream     : aliased Memory_Zipstream;
    begin
      Set(temp_zip_stream, Contents);
      Set_Name(temp_zip_stream, Name_in_archive);
-     Set_Time(temp_zip_stream, Info.Creation_time);
+     Set_Time(temp_zip_stream, Creation_time);
      Set_Unicode_Name_Flag(temp_zip_stream, Name_UTF_8_encoded);
      Add_Stream (Info, temp_zip_stream, Password);
    end Add_String;
@@ -264,21 +314,25 @@ package body Zip.Create is
    is
       lh: Zip.Headers.Local_File_Header;
    begin
-      Add_catalogue_entry (Info);
       Zip.Headers.Read_and_check(Stream, lh);
-      Info.Contains (Info.Last_entry).head.local_header_offset :=
-        Unsigned_32 (Index (Info.Stream.all)) - 1;
-      -- Copy name and extra field
+      -- Copy name and ignore extra field
       declare
         name: String(1..Positive(lh.filename_length));
         extra: String(1..Natural(lh.extra_field_length));
       begin
         String'Read(Stream'Access, name);
         String'Read(Stream'Access, extra);
+        if Info.Duplicates = error_on_duplicate then
+          --  Check for duplicates; raises Duplicate_name in this case:
+          Insert_to_name_dictionary (name, Info.dir);
+        end if;
+        Add_catalogue_entry (Info);
+        Info.Contains (Info.Last_entry).head.local_header_offset :=
+          Unsigned_32 (Index (Info.Stream.all)) - 1;
         Info.Contains (Info.Last_entry).name := new String'(name);
         lh.extra_field_length:= 0; -- extra field is zeroed (causes problems if not)
-        Zip.Headers.Write(Info.Stream.all, lh);
-        String'Write(Info.Stream, name);
+        Zip.Headers.Write(Info.Stream.all, lh);  --  Copy local header to new stream
+        String'Write(Info.Stream, name);         --  Copy entry name to new stream
       end;
       Zip.Copy_Chunk(
         Stream,
@@ -291,6 +345,7 @@ package body Zip.Create is
 
    procedure Finish (Info : in out Zip_Create_info) is
       ed : Zip.Headers.End_of_Central_Dir;
+      procedure Dispose is new Ada.Unchecked_Deallocation (String, p_String);
    begin
       --
       --  2/ Almost done - write Central Directory:
@@ -318,6 +373,7 @@ package body Zip.Create is
         Dispose (Info.Contains);
       end if;
       Info.Last_entry:= 0;
+      Clear_name_dictionary (Info);
       ed.disknum := 0;
       ed.disknum_with_start := 0;
       ed.disk_total_entries := ed.total_entries;

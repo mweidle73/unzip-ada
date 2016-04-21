@@ -31,6 +31,7 @@ procedure ZipTest is
 
    MyStream1 : aliased Memory_Zipstream;
    MyStream2 : aliased File_Zipstream;
+
 begin
    Create (Info2, MyStream_file'Unchecked_Access,   "to_file.zip", Zip.Compress.Shrink);
    Create (Info1, MyStream_memory'Unchecked_Access, "to_memo.zip", Zip.Compress.Shrink);

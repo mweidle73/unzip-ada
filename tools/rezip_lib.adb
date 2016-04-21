@@ -11,16 +11,17 @@
 --    names. See ZipMax as an example...
 --
 -- External programs used (feel free to customize/add/remove):
---   7-Zip, KZip, Zip (info-zip), DeflOpt
+--   7-Zip, KZip, Zip (info-zip), AdvZip, DeflOpt
 --   Web URL's: see Zipper_specification below or run ReZip without arguments.
 
 with Zip.Headers, Zip.Compress, UnZip;
+with Zip.Create;                        use Zip.Create;
 with Zip_Streams;                       use Zip_Streams;
 
 with My_feedback, Flexible_temp_files;
 
 with Ada.Calendar;                      use Ada.Calendar;
-with Ada.Directories;
+with Ada.Directories;                   use Ada.Directories;
 with Ada.Text_IO;                       use Ada.Text_IO;
 with Dual_IO;                           use Dual_IO;
 -- NB about 'use': no worry, Ada detects all conflicts
@@ -62,13 +63,13 @@ package body Rezip_lib is
 
   NN: constant Unbounded_String:= Null_Unbounded_String;
 
-  kzip_limit: constant:= 500_000;
+  kzip_limit: constant:= 10_000_000;
 
   type Approach is (
     original,
     shrink,
     reduce_1, reduce_2, reduce_3, reduce_4,
-    deflate_f,
+    deflate_f, deflate_1, deflate_2, deflate_3,
     external_1, external_2, external_3, external_4,
     external_5, external_6, external_7, external_8,
     external_9, external_10, external_11, external_12,
@@ -116,8 +117,8 @@ package body Rezip_lib is
       (U("7z"), U("7-Zip"), NN, -- dictionary size 2**26 = 64 MB
          U("a -tzip -mm=LZMA:a=2:d=26:mf=bt3:fb=222:lc=8:lp0:pb1"), NN, 63, Zip.lzma, 0, False),
       -- AdvZip: advancecomp v1.19+ interesting for the Zopfli algorithm
-      (U("advzip"), U("AdvZip"), U("http://advancemame.sourceforge.net/comp-readme.html"),
-         U("-a -4"), NN, 20, Zip.deflate, 0, False)
+      (U("advzip"), U("AdvZip"), U("http://advancemame.sf.net/comp-readme.html"),
+         U("-a -4"), NN, 20, Zip.deflate, kzip_limit, False)
     );
 
   defl_opt: constant Zipper_specification:=
@@ -194,12 +195,15 @@ package body Rezip_lib is
     end Rip_data;
 
     Approach_to_Method: constant array(Internal) of Zip.Compress.Compression_Method:=
-      (shrink    => Zip.Compress.shrink,
-       reduce_1  => Zip.Compress.reduce_1,
-       reduce_2  => Zip.Compress.reduce_2,
-       reduce_3  => Zip.Compress.reduce_3,
-       reduce_4  => Zip.Compress.reduce_4,
-       deflate_f => Zip.Compress.deflate_fixed
+      (shrink    => Zip.Compress.Shrink,
+       reduce_1  => Zip.Compress.Reduce_1,
+       reduce_2  => Zip.Compress.Reduce_2,
+       reduce_3  => Zip.Compress.Reduce_3,
+       reduce_4  => Zip.Compress.Reduce_4,
+       deflate_f => Zip.Compress.Deflate_Fixed,
+       deflate_1 => Zip.Compress.Deflate_1,
+       deflate_2 => Zip.Compress.Deflate_2,
+       deflate_3 => Zip.Compress.Deflate_3
       );
 
     type Packer_info is record
@@ -263,6 +267,58 @@ package body Rezip_lib is
         end;
       end if;
     end Img;
+
+    --  From AZip_Common...
+    function Image_1000(r: Zip.File_size_type; separator: Character:= ''') return String is
+      s: constant String:= Zip.File_size_type'Image(r);
+      t: String(s'First..s'First+(s'Length*4)/3);
+      j, c: Natural;
+    begin
+      --  For signed integers
+      --  if r < 0 then
+      --    return '-' & Image_1000(abs r, separator);
+      --  end if;
+      --
+      --  We build result string t from right to left
+      j:= t'Last + 1;
+      c:= 0;
+      for i in reverse s'First..s'Last loop
+        exit when s(i) = ' ' or s(i) = '-';
+        if c > 0 and then c mod 3 = 0 then
+          j:= j - 1;
+          t(j):= separator;
+        end if;
+        j:= j - 1;
+        t(j):= s(i);
+        c:= c + 1;
+      end loop;
+      return t(j..t'Last);
+    end Image_1000;
+
+    function Image_1000(r: Integer_64; separator: Character:= ''') return String is
+      s: constant String:= Integer_64'Image(r);
+      t: String(s'First..s'First+(s'Length*4)/3);
+      j, c: Natural;
+    begin
+      --  For signed integers
+      if r < 0 then
+        return '-' & Image_1000(abs r, separator);
+      end if;
+      --  We build result string t from right to left
+      j:= t'Last + 1;
+      c:= 0;
+      for i in reverse s'First..s'Last loop
+        exit when s(i) = ' ' or s(i) = '-';
+        if c > 0 and then c mod 3 = 0 then
+          j:= j - 1;
+          t(j):= separator;
+        end if;
+        j:= j - 1;
+        t(j):= s(i);
+        c:= c + 1;
+      end loop;
+      return t(j..t'Last);
+    end Image_1000;
 
     procedure Call_external(
       packer:        String;
@@ -348,7 +404,6 @@ package body Rezip_lib is
       info    : out Packer_info
     )
     is
-      use Ada.Directories;
       temp_zip: constant String:= Simple_Name(Flexible_temp_files.Radix) & "_$temp$.zip";
       rand_win: constant String:= Simple_Name(Flexible_temp_files.Radix) & "_$rand$.tmp";
       options_winner: Unbounded_String;
@@ -453,7 +508,73 @@ package body Rezip_lib is
       info.zfm        := zfm;
       -- We jump back to the startup directory.
       Set_Directory(cur_dir);
-    end Process_external;
+    end Process_External;
+
+    --  Compress data as raw compressed data
+    procedure Process_Internal_Raw(a: Approach; e: in out Dir_entry) is
+      File_in       : aliased File_Zipstream;
+      File_out      : aliased File_Zipstream;
+    begin
+      Set_Name (File_in, Temp_name(False,original));
+      Open (File_in, In_File);
+      Set_Name (File_out, Temp_name(True,a));
+      Create (File_out, Out_File);
+      Zip.Compress.Compress_data
+      (
+        input            => File_in,
+        output           => File_out,
+        input_size_known => True,
+        input_size       => e.head.short_info.dd.uncompressed_size,
+        method           => Approach_to_Method(a),
+        feedback         => My_Feedback'Access,
+        password         => "",
+        CRC              => e.head.short_info.dd.crc_32,
+        -- we take the occasion to compute the CRC if not
+        -- yet available (e.g. JAR)
+        output_size      => e.info(a).size,
+        zip_type         => e.info(a).zfm
+      );
+      Close(File_in);
+      Close(File_out);
+    end Process_Internal_Raw;
+
+    --  Compress data as a Zip archive (like external methods), then call post-processing
+    procedure Process_Internal_as_Zip(a: Approach; e: in out Dir_entry) is
+      zip_file : aliased File_Zipstream;
+      archive : Zip_Create_info;
+      temp_zip: constant String:= Simple_Name(Flexible_temp_files.Radix) & "_$temp$.zip";
+      data_name: constant String:= Simple_Name(Temp_name(False,original));
+      zi_ext: Zip.Zip_info;
+      header: Zip.Headers.Local_File_Header;
+      MyStream   : aliased File_Zipstream;
+      cur_dir: constant String:= Current_Directory;
+    begin
+      Set_Directory(Containing_Directory(Flexible_temp_files.Radix));
+      Create (archive, zip_file'Unchecked_Access, temp_zip);
+      Set(archive, Approach_to_Method(a));
+      Add_File(archive, data_name);
+      Finish (archive);
+      -- Post processing of "deflated" entries with DeflOpt:
+      Call_external(S(defl_opt.name), temp_zip);
+      -- Now, rip
+      Set_Name (MyStream, temp_zip);
+      Open (MyStream, In_File);
+      Zip.Load( zi_ext, MyStream, True );
+      Rip_data(
+        archive      => zi_ext,
+        input        => MyStream,
+        data_name    => data_name,
+        rip_rename   => Temp_name(True,a),
+        unzip_rename => "",
+        header       => header
+      );
+      e.info(a).size:= header.dd.compressed_size;
+      e.info(a).zfm := header.zip_type;
+      Close(MyStream);
+      Delete_File(temp_zip);
+      Zip.Delete(zi_ext);
+      Set_Directory(cur_dir);
+    end Process_Internal_as_Zip;
 
     time_0      : constant Ada.Calendar.Time:= Clock;
 
@@ -481,8 +602,6 @@ package body Rezip_lib is
       procedure Process_one(unique_name: String) is
         comp_size  :  Zip.File_size_type;
         uncomp_size:  Zip.File_size_type;
-        File_in       : aliased File_Zipstream;
-        File_out      : aliased File_Zipstream;
         choice: Approach:= original;
         deco: constant String:= "-->-->-->" & (20+unique_name'Length) * '-';
         mth: Zip.PKZip_method;
@@ -570,18 +689,20 @@ package body Rezip_lib is
         --  Apply limitations: skip some methods if certain conditions are met.
         --  For instance:
         --    Shrink may in rare cases be better for tiny files;
-        --    KZip is excellent but really too slow on large files
+        --    KZip and Zopfli are excellent but really too slow on large files
         --
         for a in Approach loop
           case a is
             when original =>
               null;
             when shrink =>
-              consider(a):= consider(a) and uncomp_size <= 5000;
+              consider(a):= consider(a) and uncomp_size <= 6000;
             when reduce_1 .. reduce_4 =>
-              consider(a):= consider(a) and uncomp_size <= 8000;
+              consider(a):= consider(a) and uncomp_size <= 9000;
             when deflate_f =>
-              consider(a):= consider(a) and uncomp_size <= 2000;
+              consider(a):= consider(a) and uncomp_size <= 4000;
+            when deflate_1 .. deflate_3 =>
+              null;
             when External =>
               consider(a):= consider(a) and (ext(a).limit = 0 or uncomp_size <= ext(a).limit);
           end case;
@@ -603,28 +724,11 @@ package body Rezip_lib is
                 mth:= Zip.Method_from_code(e.info(a).zfm);
                 --
               when Internal =>
-                Set_Name (File_in, Temp_name(False,original));
-                Open (File_in, In_File);
-                Set_Name (File_out, Temp_name(True,a));
-                Create (File_out, Out_File);
-                Zip.Compress.Compress_data
-                (
-                  input            => File_in,
-                  output           => File_out,
-                  input_size_known => True,
-                  input_size       => e.head.short_info.dd.uncompressed_size,
-                  method           => Approach_to_Method(a),
-                  feedback         => My_Feedback'Access,
-                  password         => "",
-                  CRC              => e.head.short_info.dd.crc_32,
-                  -- we take the occasion to compute the CRC if not
-                  -- yet available (e.g. JAR)
-                  output_size      => e.info(a).size,
-                  zip_type         => e.info(a).zfm
-                );
-                Close(File_in);
-                Close(File_out);
-                --
+                if a in deflate_1 .. deflate_3 then
+                  Process_Internal_as_Zip(a, e.all);
+                else
+                  Process_Internal_Raw(a, e.all);
+                end if;
               when External =>
                 Dual_IO.New_Line;
                 Process_External(
@@ -675,7 +779,8 @@ package body Rezip_lib is
           -- '/' &
           -- Trim(Integer'Image(Zip.Entries(zi)),Left) &
           "</td>" &
-          "<td bgcolor=lightgrey><tt>" & unique_name & "</tt></td>");
+          "<td bgcolor=lightgrey><tt>" & unique_name & "</tt>, " &
+          Image_1000(uncomp_size) & "</td>");
         for a in Approach loop
           if consider_a_priori(a) then
             if not consider(a) then
@@ -688,7 +793,7 @@ package body Rezip_lib is
               Put(summary,"<td>");
             end if;
             if consider(a) then
-              Put(summary, Zip.File_size_type'Image(e.info(a).size));
+              Put(summary, Image_1000(e.info(a).size));
             end if;
             if choice = a then
               Put(summary,"</b>");
@@ -709,7 +814,7 @@ package body Rezip_lib is
           "</td>"
         );
         Winner_color;
-        Put(summary, Zip.File_size_type'Image(e.info(choice).size));
+        Put(summary, Image_1000(e.info(choice).size));
         Put(summary,"</b></td><td>");
         if e.info(original).size > 0 then
           Put(
@@ -781,7 +886,6 @@ package body Rezip_lib is
           sb(sb'Last-2..sb'Last-1);
       end Webcolor;
 
-      use Ada.Directories;
 
     begin -- Repack_contents
       T0:= Clock;
@@ -810,19 +914,20 @@ package body Rezip_lib is
       Put_Line(summary, "<style>.container { overflow-y: auto; height: 87%; }");
       Put_Line(summary, "td_approach { width:115px; }");
       Put_Line(summary, "</style><body>");
+      Put_Line(summary, "<font face=""Calibri, Arial, Tahoma""> <!-- Set font for the whole page !-->");
       Put_Line(summary,
         "<h2><a target=_blank href=" & Zip.web &
         ">ReZip</a> summary for file " & orig_name & "</h2>"
       );
       Put_Line(summary,
-        "Library version " & Zip.version & " dated " & Zip.reference
+        "ReZip - Zip-Ada Library version " & Zip.version & " dated " & Zip.reference
       );
       if format_choice /= all_formats then
         Put_Line(summary,
           "<br><table border=0 cellpadding=0 cellspacing=0>" &
           "<tr bgcolor=" & lightred &
           "><td><b>An option that filters methods is on, " &
-          "result(s) may be sub-optimal.</b></td></tr></table><br>"
+          "result(s) may be sub-optimal - see details at bottom.</b></td></tr></table><br>"
         );
       end if;
       Put_Line(summary, "<div class=""container""><table border=1 cellpadding=1 cellspacing=1>");
@@ -841,7 +946,7 @@ package body Rezip_lib is
       Put_Line(summary, "</tr>");
       Put(summary,
         "<tr bgcolor=lightyellow><td></td>"&
-        "<td bgcolor=lightgrey valign=bottom><b>File name:</b></td>"
+        "<td bgcolor=lightgrey valign=bottom><b>File name, uncompressed size:</b></td>"
       );
       for a in Approach loop
         if consider_a_priori(a) then
@@ -849,7 +954,9 @@ package body Rezip_lib is
             when original =>
               Put(summary, "<td align=right bgcolor=#dddd00 class=""td_approach"">Approach's<br>method/<br>format &rarr;</td>");
             when Internal =>
-              Put(summary, "<td bgcolor=#fafa64>" & To_Lower( Zip.Compress.Compression_Method'Image(Approach_to_Method(a))) & "</td>");
+              Put(summary, "<td bgcolor=#fafa64>" &
+                To_Lower( Zip.PKZip_method'Image(
+                  Zip.Compress.Method_to_Format(Approach_to_Method(a)))) & "</td>");
               -- better: the Zip.PKZip_method, in case 2 Compression_Method's produce the same sub-format
             when External =>
               Put(summary, "<td bgcolor=#fafa64>" & To_Lower(Zip.PKZip_method'Image(ext(a).pkzm)) & "</td>");
@@ -921,12 +1028,12 @@ package body Rezip_lib is
         if consider_a_priori(a) then
           Put(summary,
             "<td bgcolor=#" & Webcolor(a) & ">" &
-            Zip.File_size_type'Image(total(a).size) & "</td>"
+            Image_1000(total(a).size) & "</td>"
           );
         end if;
       end loop;
       Put(summary,
-        "<td></td><td></td><td></td><td bgcolor=lightgreen><b>" & Zip.File_size_type'Image(total_choice.size) &
+        "<td></td><td></td><td></td><td bgcolor=lightgreen><b>" & Image_1000(total_choice.size) &
         "</b></td><td>"
       );
       if total(original).size > 0 then
@@ -946,7 +1053,7 @@ package body Rezip_lib is
       end if;
       Put_Line(summary, "</td></tr>");
       -- Report total files per approach
-      Put(summary,"<tr><td></td><td><b>T<small>OTAL FILES</small></b></td>");
+      Put(summary,"<tr><td></td><td><b>T<small>OTAL FILES (when optimal)</small></b></td>");
       for a in Approach loop
         if consider_a_priori(a) then
           Put(summary,
@@ -962,18 +1069,15 @@ package body Rezip_lib is
       );
       Put_Line(summary, "</td></tr>");
       -- Report total saved bytes per approach
-      Put(summary,"<tr><td></td><td><b>T<small>OTAL SAVED BYTES</small></b></td>");
+      Put(summary,"<tr><td></td><td><b>T<small>OTAL SAVED BYTES (when optimal)</small></b></td>");
       for a in Approach loop
         if consider_a_priori(a) then
-          Put(summary,
-            "<td bgcolor=#" & Webcolor(a) & ">" &
-            Integer_64'Image(total(a).saved) & "</td>"
-          );
+          Put(summary, "<td bgcolor=#" & Webcolor(a) & ">" & Image_1000(total(a).saved) & "</td>");
         end if;
       end loop;
       Put(summary,
-        "<td></td><td></td><td></td><td bgcolor=lightgreen><b>" & Integer_64'Image(total_choice.saved) &
-        "</b></td>" &
+        "<td></td><td></td><td></td><td bgcolor=lightgreen><b>" &
+        Image_1000(total_choice.saved) & "</b></td>" &
         "<td>"
       );
       if total(original).size > 0 then
@@ -991,7 +1095,17 @@ package body Rezip_lib is
         );
         Put(summary,"%");
       end if;
-      Put_Line(summary, "</td></tr></table></div><br>");
+      Put_Line(summary, "</td></tr></table></div><br><br>");
+      Put_Line(summary, "<dt>Options used for ReZip</dt>");
+      Put_Line(summary, "<dd>Randomized_stable =" & Integer'Image(randomized_stable) & "<br>");
+      Put_Line(summary, "    Formats allowed:<br><table border=1 cellpadding=1 cellspacing=1>");
+      for f in format_choice'Range loop
+        Put_Line(summary,
+          "      <tr><td>" & Zip.PKZip_method'Image(f) & "</td><td>" &
+          Boolean'Image(format_choice(f)) & "</td></tr>");
+      end loop;
+      Put_Line(summary, "    </table>");
+      Put_Line(summary, "</dd>");
       T1:= Clock;
       seconds:= T1-T0;
       Put(summary, "Time elapsed : ");
@@ -1000,7 +1114,7 @@ package body Rezip_lib is
       Put(summary,  Float( seconds ) / 60.0, 4, 2, 0 );
       Put(summary,  " minutes, or");
       Put(summary,  Float( seconds ) / 3600.0, 4, 2, 0 );
-      Put_Line(summary,  " hours.</body></html>");
+      Put_Line(summary,  " hours.</font></body></html>");
       Close(summary);
       Dual_IO.Put("Time elapsed : ");
       DFIO.Put( Float( seconds ), 4, 2, 0 );
@@ -1031,7 +1145,7 @@ package body Rezip_lib is
       Ada.Text_IO.Put("  " & fix);
       fix:= (others => ' ');
       Insert(fix,fix'First, S(p.name));
-      Ada.Text_IO.Put_Line(" Executable:  " & fix & " URL: " & S(p.URL));
+      Ada.Text_IO.Put_Line(" Executable: " & fix & " URL: " & S(p.URL));
     end Display;
     name_is_new: Boolean;
   begin
