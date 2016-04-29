@@ -1,12 +1,12 @@
 -- This is a GNAT, GCC or GNAT Programming Studio (GPS) project file
 -- for the Zip-Ada project ( http://unzip-ada.sf.net/ )
--- Build me with "gnatmake -P zipada.gpr", or open me with GPS
+-- Build me with "gprbuild -P zipada", or open me with GPS
 --
 project ZipAda is
 
    type Build_Mode_Type is
       ("Debug", "Optimize", "Profiling");
-   Build_Mode : Build_Mode_Type := external ("Build_Mode", "Debug");
+   Build_Mode : Build_Mode_Type := external ("Build_Mode", "Optimize");
    for Source_Dirs use (".", "zip_lib", "test", "extras", "tools", "demo");
    for Exec_Dir use ".";
    for Main use (
@@ -81,8 +81,11 @@ project ZipAda is
 
          when "Debug" =>
             for Default_Switches ("ada") use (
+              "-gnatyaknpr",  --  Style: check all casings: a:attribute, k:keywords, n:package Standard identifiers, p:pragma, r:identifier references
+              "-gnatybfhiu",  --  Style: check b:no blanks at end of lines, f:no ff/vtabs, h: no htabs, i:if-then layout, u:no unnecessary blank lines
+              "-gnatyx",      --  Style: check x:no extra parens
               "-gnat05", "-gnatf", "-gnato", 
-              "-fstack-check", "-g", "-gnatwa", "-gnatVa", "-gnatyhiknp", 
+              "-fstack-check", "-g", "-gnatwa", "-gnatVa",
               "-gnatec../debug.pra"
               );
 
@@ -107,7 +110,7 @@ project ZipAda is
    end Compiler;
 
    package Builder is
-      for Default_Switches ("ada") use ("-j4", "-C");
+      for Default_Switches ("ada") use ("-j3", "-C");  --  use 3 cores/CPUs when available
    end Builder;
 
    package Ide is

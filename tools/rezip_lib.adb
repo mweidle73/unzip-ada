@@ -63,7 +63,10 @@ package body Rezip_lib is
 
   NN: constant Unbounded_String:= Null_Unbounded_String;
 
-  kzip_limit: constant:= 10_000_000;
+  --  Give up recompression above a certain data size for some external packers like KZip
+  --  or Zopfli.
+  --
+  kzip_zopfli_limit: constant:= 10_000_000;
 
   type Approach is (
     original,
@@ -96,11 +99,11 @@ package body Rezip_lib is
          NN, 21, Zip.deflate_e, 0, False),
       -- KZip:
       (U("kzip"),U("KZIP"),U("http://www.advsys.net/ken/utils.htm"),
-         U("/rn /b0"), NN, 20, Zip.deflate, kzip_limit, True),
+         U("/rn /b0"), NN, 20, Zip.deflate, kzip_zopfli_limit, True),
       (U("kzip"),U("KZIP"),NN,
-         U("/rn /b#RAND#(0,128)"), NN, 20, Zip.deflate, kzip_limit, True),
+         U("/rn /b#RAND#(0,128)"), NN, 20, Zip.deflate, kzip_zopfli_limit, True),
       (U("kzip"),U("KZIP"),NN,
-         U("/rn /b#RAND#(128,2048)"), NN, 20, Zip.deflate, kzip_limit, True),
+         U("/rn /b#RAND#(128,2048)"), NN, 20, Zip.deflate, kzip_zopfli_limit, True),
       -- Zip 3.0 or later; BZip2:
       (U("zip"), U("Zip"), U("http://info-zip.org/"),
          U("-#RAND#(1,9) -Z bzip2"), NN, 46, Zip.bzip2, 0, True),
@@ -118,7 +121,7 @@ package body Rezip_lib is
          U("a -tzip -mm=LZMA:a=2:d=26:mf=bt3:fb=222:lc=8:lp0:pb1"), NN, 63, Zip.lzma, 0, False),
       -- AdvZip: advancecomp v1.19+ interesting for the Zopfli algorithm
       (U("advzip"), U("AdvZip"), U("http://advancemame.sf.net/comp-readme.html"),
-         U("-a -4"), NN, 20, Zip.deflate, kzip_limit, False)
+         U("-a -4"), NN, 20, Zip.deflate, kzip_zopfli_limit, False)
     );
 
   defl_opt: constant Zipper_specification:=
@@ -156,7 +159,7 @@ package body Rezip_lib is
       dummy_crc      : Unsigned_32;
       use UnZip;
     begin
-      Zip.Find_Offset(
+      Zip.Find_offset(
         info           => archive,
         name           => data_name,
         name_encoding  => dummy_encoding,
@@ -176,7 +179,7 @@ package body Rezip_lib is
       );
       -- * Get the data, compressed
       Ada.Streams.Stream_IO.Create(file_out, Out_File, rip_rename);
-      Zip.Copy_Chunk(input, Stream(file_out).all, Integer(comp_size));
+      Zip.Copy_chunk(input, Stream(file_out).all, Integer(comp_size));
       Close(file_out);
       if unzip_rename /= "" then
         -- * Get the data, uncompressed
@@ -330,14 +333,16 @@ package body Rezip_lib is
         new Ada.Unchecked_Deallocation(Argument_List, Argument_List_Access);
       list: Argument_List_Access;
       ok: Boolean;
-      Cannot_call_external: exception;
     begin
       Dual_IO.Put_Line(packer & " [" & args & ']');
       list:= Argument_String_To_List(args);
       GNAT.OS_Lib.Spawn(packer, list.all, ok);
       Dispose(list);
       if not ok then
-        raise Cannot_call_external;
+        Dual_IO.Put_Line(
+          "Warning: cannot call " & packer &
+          ". Is it callable through the ""path"" ?"
+        );
       end if;
     end Call_external;
 
@@ -470,7 +475,7 @@ package body Rezip_lib is
           size:= header.dd.compressed_size;
           zfm := header.zip_type;
           if Exists(rand_win) then
-            Delete_file(rand_win);
+            Delete_File(rand_win);
           end if;
           Rename(out_name, rand_win);
           options_winner:= info.expanded_options;
@@ -492,7 +497,7 @@ package body Rezip_lib is
         if attempt >= randomized_stable then
           if size_memory(randomized_stable) = size_memory(1) then
             if Exists(out_name) then
-              Delete_file(out_name);
+              Delete_File(out_name);
             end if;
             Rename(rand_win, out_name);
             info.expanded_options:= options_winner;
@@ -526,7 +531,7 @@ package body Rezip_lib is
         input_size_known => True,
         input_size       => e.head.short_info.dd.uncompressed_size,
         method           => Approach_to_Method(a),
-        feedback         => My_Feedback'Access,
+        feedback         => My_feedback'Access,
         password         => "",
         CRC              => e.head.short_info.dd.crc_32,
         -- we take the occasion to compute the CRC if not
@@ -802,7 +807,7 @@ package body Rezip_lib is
           end if;
         end loop;
         -- Recall winner approach, method and size:
-        Put(summary,"<td>" & Img(choice, HTML => True) & "</td>");
+        Put(summary,"<td>" & Img(choice, html => True) & "</td>");
         Put(summary,
           "<td bgcolor=#fafa64>" &
           To_Lower(Zip.PKZip_method'Image(Zip.Method_from_code(e.info(choice).zfm))) &
@@ -885,7 +890,6 @@ package body Rezip_lib is
           sg(sg'Last-2..sg'Last-1) &
           sb(sb'Last-2..sb'Last-1);
       end Webcolor;
-
 
     begin -- Repack_contents
       T0:= Clock;
@@ -1124,7 +1128,7 @@ package body Rezip_lib is
 
     -- This is for randomizing the above seed_iterator.
     subtype Seed_Range is Integer range 1..1_000_000;
-    package Rnd_seed is new Ada.Numerics.Discrete_Random(Seed_range);
+    package Rnd_seed is new Ada.Numerics.Discrete_Random(Seed_Range);
     gen_seed: Rnd_seed.Generator;
 
   begin
