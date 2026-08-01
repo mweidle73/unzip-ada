@@ -1,0 +1,71 @@
+name: Documentation Pages
+
+on:
+  push:
+    branches:
+      - abuild-gh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  documentation:
+    name: Build documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out Zip-Ada
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Build the documentation site
+        shell: bash
+        run: .github/ci/build-pages
+
+      - name: Verify the Pages tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .github/build/pages/index.html
+          grep -Fq '<title>Zip-Ada documentation for Abuild</title>' \
+            .github/build/pages/index.html
+          grep -Fq 'What is Zip-Ada ?' .github/build/pages/index.html
+          grep -Fq 'zertovitch/zip-ada' .github/build/pages/index.html
+          test -s .github/build/pages/zipada-original.txt
+          section_count=$(grep -c 'class="document-section"' \
+            .github/build/pages/index.html)
+          test "$section_count" -ge 5
+          test -z "$(find .github/build/pages -type l -print -quit)"
+
+      - name: Upload the GitHub Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: .github/build/pages/
+          retention-days: 7
+
+  deploy-pages:
+    name: Deploy GitHub Pages
+    if: >-
+      github.ref_name == github.event.repository.default_branch &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy the documentation site
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

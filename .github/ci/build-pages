@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+
+"""Render the historical Zip-Ada text as a structured static site."""
+
+from __future__ import annotations
+
+import html
+import re
+import shutil
+import sys
+from pathlib import Path
+
+
+def slugify(value: str) -> str:
+    """Return a stable HTML fragment identifier for a section title."""
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "section"
+
+
+def linked_text(value: str) -> str:
+    """Escape text and turn the document's HTTP URLs into links."""
+    parts = re.split(r"(https?://\S+)", value)
+    rendered: list[str] = []
+    for part in parts:
+        if re.fullmatch(r"https?://\S+", part):
+            escaped = html.escape(part, quote=True)
+            rendered.append(f'<a href="{escaped}">{escaped}</a>')
+        else:
+            rendered.append(html.escape(part, quote=True))
+    return "".join(rendered)
+
+
+def render_blocks(lines: list[str]) -> str:
+    """Render paragraphs and the simple bullet syntax used by zipada.txt."""
+    output: list[str] = []
+    paragraph: list[str] = []
+    items: list[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            output.append(f"<p>{linked_text(' '.join(paragraph))}</p>")
+            paragraph.clear()
+
+    def flush_items() -> None:
+        if items:
+            output.append("<ul>")
+            output.extend(f"<li>{linked_text(item)}</li>" for item in items)
+            output.append("</ul>")
+            items.clear()
+
+    index = 0
+    while index < len(lines):
+        line = lines[index].rstrip()
+        stripped = line.strip()
+
+        if not stripped:
+            flush_paragraph()
+            flush_items()
+            index += 1
+            continue
+
+        if re.match(r"^\s*(?:\*|-)\s+", line):
+            flush_paragraph()
+            item = re.sub(r"^\s*(?:\*|-)\s+", "", line)
+            index += 1
+            while index < len(lines):
+                continuation = lines[index].rstrip()
+                if not continuation.strip():
+                    break
+                if re.match(r"^\s*(?:\*|-)\s+", continuation):
+                    break
+                if continuation.startswith(("  ", "\t")):
+                    item += " " + continuation.strip()
+                    index += 1
+                    continue
+                break
+            items.append(item)
+            continue
+
+        # Preserve the portability matrix, including its intentional blanks.
+        if stripped.startswith("OS "):
+            flush_paragraph()
+            flush_items()
+            table_lines = [line]
+            separators = 0
+            index += 1
+            while index < len(lines):
+                table_line = lines[index].rstrip()
+                table_lines.append(table_line)
+                index += 1
+                if table_line.strip() and set(table_line.strip()) == {"-"}:
+                    separators += 1
+                    if separators == 2:
+                        break
+            output.append(
+                '<pre class="text-table">'
+                + html.escape("\n".join(table_lines))
+                + "</pre>"
+            )
+            continue
+
+        flush_items()
+        paragraph.append(stripped)
+        index += 1
+
+    flush_paragraph()
+    flush_items()
+    return "\n".join(output)
+
+
+def parse_sections(text: str) -> list[tuple[str, list[str]]]:
+    """Split headings that use the title/newline/equals convention."""
+    lines = text.splitlines()
+    sections: list[tuple[str, list[str]]] = []
+    title = "Overview"
+    body: list[str] = []
+    index = 0
+
+    while index < len(lines):
+        if (
+            index + 1 < len(lines)
+            and lines[index].strip()
+            and re.fullmatch(r"=+", lines[index + 1].strip())
+        ):
+            if body or sections:
+                sections.append((title, body))
+            title = lines[index].strip()
+            body = []
+            index += 2
+            continue
+        body.append(lines[index])
+        index += 1
+
+    sections.append((title, body))
+    return [(heading, content) for heading, content in sections if content]
+
+
+def main() -> int:
+    output_dir = Path(sys.argv[1] if len(sys.argv) > 1 else ".github/build/pages")
+    source = Path("zipada.txt")
+    text = source.read_bytes().decode("iso-8859-1")
+    sections = parse_sections(text)
+
+    if len(sections) < 5:
+        raise RuntimeError("zipada.txt did not yield the expected section structure")
+
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True)
+    shutil.copyfile(source, output_dir / "zipada-original.txt")
+
+    navigation = "\n".join(
+        f'<li><a href="#{slugify(title)}">{html.escape(title)}</a></li>'
+        for title, _ in sections
+    )
+    content = "\n".join(
+        f'<section class="document-section" id="{slugify(title)}">'
+        f"<h2>{html.escape(title)}</h2>{render_blocks(lines)}</section>"
+        for title, lines in sections
+    )
+
+    document = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Zip-Ada documentation for Abuild</title>
+<style>
+:root{{--ink:#17202a;--muted:#5d6873;--line:#d8dee4;--panel:#f6f8fa;--accent:#0969da}}
+*{{box-sizing:border-box}}
+body{{margin:0;color:var(--ink);font-family:system-ui,-apple-system,sans-serif;line-height:1.55;background:#fff}}
+a{{color:var(--accent)}}
+.hero{{padding:3.5rem max(1.5rem,calc((100vw - 76rem)/2));background:linear-gradient(135deg,#eff6ff,#f7f3ff);border-bottom:1px solid var(--line)}}
+.eyebrow{{margin:0 0 .5rem;color:#8250df;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:.78rem}}
+h1{{margin:.2rem 0 .75rem;font-size:clamp(2.2rem,5vw,4rem);line-height:1.05}}
+.lead{{max-width:50rem;color:var(--muted);font-size:1.12rem}}
+.actions{{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.5rem}}
+.button{{display:inline-block;padding:.65rem 1rem;border:1px solid var(--accent);border-radius:.45rem;text-decoration:none;font-weight:650}}
+.button.primary{{color:#fff;background:var(--accent)}}
+.layout{{display:grid;grid-template-columns:17rem minmax(0,1fr);gap:3rem;max-width:76rem;margin:0 auto;padding:2.5rem 1.5rem 5rem}}
+nav{{position:sticky;top:1rem;align-self:start;padding:1rem;background:var(--panel);border:1px solid var(--line);border-radius:.6rem}}
+nav h2{{margin:.1rem 0 .6rem;font-size:1rem}}
+nav ul{{list-style:none;padding:0;margin:0}}
+nav li{{margin:.35rem 0}}
+nav a{{text-decoration:none;font-size:.9rem}}
+.document-section{{padding-bottom:1.5rem;border-bottom:1px solid var(--line)}}
+.document-section h2{{margin-top:2.4rem;scroll-margin-top:1rem}}
+.document-section:first-child h2{{margin-top:0}}
+.document-section li{{margin:.35rem 0}}
+.text-table{{padding:1rem;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:.4rem;font-size:.82rem}}
+footer{{padding:1.5rem;text-align:center;color:var(--muted);border-top:1px solid var(--line)}}
+@media(max-width:800px){{.layout{{grid-template-columns:1fr}}nav{{position:static}}}}
+</style>
+</head>
+<body>
+<header class="hero">
+<p class="eyebrow">Abuild dependency snapshot</p>
+<h1>Zip-Ada</h1>
+<p class="lead">Documentation for the source revision selected by Abuild. The mirror follows the maintained official repository while preserving the historical svn2github lineage separately.</p>
+<div class="actions">
+<a class="button primary" href="https://github.com/zertovitch/zip-ada">Official upstream</a>
+<a class="button" href="https://github.com/mweidle73/unzip-ada">Abuild mirror</a>
+<a class="button" href="zipada-original.txt">Original ISO-8859-1 text</a>
+</div>
+</header>
+<div class="layout">
+<nav aria-label="Documentation sections"><h2>On this page</h2><ul>{navigation}</ul></nav>
+<main>{content}</main>
+</div>
+<footer>Generated from the preserved <code>zipada.txt</code> documentation without modifying its source.</footer>
+</body>
+</html>
+"""
+    (output_dir / "index.html").write_text(document, encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
