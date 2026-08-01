@@ -1,0 +1,50 @@
+name: Trixie CI
+
+on:
+  push:
+    branches:
+      - abuild-gh
+  pull_request:
+    branches:
+      - abuild-gh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trixie-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and archive round trip
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out Zip-Ada
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify the GitHub-only overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show-ref --verify refs/remotes/origin/abuild
+          git merge-base --is-ancestor origin/abuild HEAD
+          unexpected=$(
+            git diff --name-only origin/abuild...HEAD |
+              grep -Ev '^\.github/' || true
+          )
+          if test -n "$unexpected"; then
+            echo "abuild-gh contains changes outside .github/:" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+
+      - name: Build Zip-Ada and verify archive behavior
+        shell: bash
+        run: .github/ci/run .github/ci/check

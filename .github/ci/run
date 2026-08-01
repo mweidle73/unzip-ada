@@ -1,0 +1,44 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd -P)
+REPOSITORY_ROOT=$(CDPATH= cd "$SCRIPT_DIR/../.." && pwd -P)
+
+IMAGE=${ZIP_ADA_CI_IMAGE:-zip-ada-ci-trixie}
+PLATFORM=${DOCKER_PLATFORM:-linux/amd64}
+NETWORK=${ZIP_ADA_CI_NETWORK:-none}
+
+docker build \
+    --platform "$PLATFORM" \
+    --tag "$IMAGE" \
+    --file "$SCRIPT_DIR/Dockerfile.trixie" \
+    "$REPOSITORY_ROOT"
+
+if [ "$#" -eq 0 ]; then
+    set -- /bin/sh
+fi
+
+TTY_OPTION=
+if [ -t 0 ] && [ -t 1 ]; then
+    # This controlled, single-word value deliberately expands as one option.
+    TTY_OPTION=--tty
+fi
+
+docker run \
+    --platform "$PLATFORM" \
+    --rm \
+    --init \
+    --interactive \
+    $TTY_OPTION \
+    --user "$(id -u):$(id -g)" \
+    --network "$NETWORK" \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --tmpfs /tmp:rw,exec,nosuid,nodev,mode=1777 \
+    --env HOME=/tmp \
+    --volume "$REPOSITORY_ROOT:/work:ro" \
+    --workdir /work \
+    "$IMAGE" \
+    "$@"
