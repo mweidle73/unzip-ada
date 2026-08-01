@@ -1,0 +1,62 @@
+#!/bin/sh
+
+set -eu
+
+SOURCE_COPY=/tmp/zip-ada-source
+EXPECTED_ENTRIES=/tmp/zip-ada-expected-entries
+ACTUAL_ENTRIES=/tmp/zip-ada-actual-entries
+EXPECTED_STRING=/tmp/zip-ada-expected-string
+
+rm -rf "$SOURCE_COPY"
+mkdir -p "$SOURCE_COPY"
+
+# Build a private copy because the historical GPR file keeps object and
+# executable paths beside the sources. The repository mount remains read-only.
+(cd /work && tar --exclude=.git --exclude=.github/build -cf - .) |
+    (cd "$SOURCE_COPY" && tar -xf -)
+
+cd "$SOURCE_COPY"
+echo 'check: building every main from zipada.gpr'
+gprbuild -p -j8 -P zipada.gpr
+
+test -x ./demo_zip
+test -x ./demo_unzip
+
+echo 'check: creating a mixed encrypted and unencrypted archive'
+./demo_zip
+
+echo 'check: verifying archive integrity with Debian unzip'
+unzip -P 1234 -t mini_zip.zip
+
+echo 'check: verifying the archive entry set'
+printf '%s\n' \
+    demo/demo_unzip.adb \
+    demo/demo_zip.adb \
+    nice_string.txt > "$EXPECTED_ENTRIES"
+unzip -Z1 mini_zip.zip | LC_ALL=C sort > "$ACTUAL_ENTRIES"
+diff -u "$EXPECTED_ENTRIES" "$ACTUAL_ENTRIES"
+
+echo 'check: comparing unencrypted content through Debian unzip'
+unzip -p mini_zip.zip demo/demo_unzip.adb > /tmp/demo-unzip-from-archive.adb
+cmp demo/demo_unzip.adb /tmp/demo-unzip-from-archive.adb
+
+echo 'check: comparing encrypted content through Debian unzip'
+unzip -P 1234 -p mini_zip.zip demo/demo_zip.adb \
+    > /tmp/demo-zip-from-archive.adb
+cmp demo/demo_zip.adb /tmp/demo-zip-from-archive.adb
+
+printf '%s\n%s' \
+    '==== Hello world! ====' \
+    'It is such a nice "Hello world"-like demo, isn'\''t it ?' \
+    > "$EXPECTED_STRING"
+echo 'check: comparing in-memory string content through Debian unzip'
+unzip -p mini_zip.zip nice_string.txt > /tmp/nice-string-from-archive
+cmp "$EXPECTED_STRING" /tmp/nice-string-from-archive
+
+# Exercise Zip-Ada's extraction path as well as the independent unzip oracle.
+echo "check: verifying Zip-Ada's own extraction path"
+printf '\n' | ./demo_unzip > /tmp/demo-unzip-output
+cmp demo/demo_unzip.adb 'demo_unzip_$unzipped$.adb'
+grep -Fq '*** Dump done, press Enter!' /tmp/demo-unzip-output
+
+echo 'check: Zip-Ada build and archive round trip passed'
