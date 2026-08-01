@@ -1,0 +1,32 @@
+name: Upstream Sync
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: true
+
+jobs:
+  synchronize:
+    name: Fast-forward official master
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out trusted maintenance tooling
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: abuild-gh
+          fetch-depth: 0
+          # Required solely for the guarded fast-forward push below.
+          persist-credentials: true
+
+      - name: Synchronize official Zip-Ada master
+        shell: bash
+        run: .github/ci/sync-upstream
