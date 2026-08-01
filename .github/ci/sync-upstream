@@ -1,0 +1,29 @@
+#!/bin/sh
+
+set -eu
+
+UPSTREAM_URL=${ZIP_ADA_UPSTREAM_URL:-https://github.com/zertovitch/zip-ada.git}
+
+git remote remove official 2>/dev/null || true
+git remote add official "$UPSTREAM_URL"
+git fetch --no-tags origin refs/heads/master:refs/remotes/origin/master
+git fetch --no-tags official refs/heads/master:refs/remotes/official/master
+
+mirror_commit=$(git rev-parse refs/remotes/origin/master)
+upstream_commit=$(git rev-parse refs/remotes/official/master)
+
+if [ "$mirror_commit" = "$upstream_commit" ]; then
+    echo "Mirror master already matches official upstream at $mirror_commit"
+    exit 0
+fi
+
+if ! git merge-base --is-ancestor "$mirror_commit" "$upstream_commit"; then
+    echo "Official Zip-Ada master does not fast-forward the mirror:" >&2
+    echo "  Mirror:   $mirror_commit" >&2
+    echo "  Official: $upstream_commit" >&2
+    echo "Refusing to rewrite history automatically" >&2
+    exit 1
+fi
+
+git push origin "$upstream_commit:refs/heads/master"
+echo "Fast-forwarded mirror master to $upstream_commit"
