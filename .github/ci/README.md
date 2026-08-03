@@ -15,10 +15,13 @@ Its long-lived branches have distinct roles:
 
 The weekly `Upstream Sync` workflow compares the two `master` branches and
 updates the mirror only when the official branch is a fast-forward. It fails
-loudly on a rewrite or divergence. The write-enabled job checks out the
-trusted `abuild-gh` maintenance overlay and never builds or executes mirrored
-upstream code. A push made with GitHub's workflow token does not start the
-other workflows; build validation remains attached to `abuild-gh`.
+loudly on a rewrite or divergence. It also requires all tag refs to match
+exactly. The official repository currently has no tags, so the first tag is a
+manual review gate rather than an automatically mirrored ref. The
+write-enabled job checks out the trusted `abuild-gh` maintenance overlay and
+never builds or executes mirrored upstream code. A push made with GitHub's
+workflow token does not start the other workflows; build validation remains
+attached to `abuild-gh`.
 
 ## Local Trixie validation
 

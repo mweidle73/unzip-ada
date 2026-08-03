@@ -9,6 +9,26 @@ git remote add official "$UPSTREAM_URL"
 git fetch --no-tags origin refs/heads/master:refs/remotes/origin/master
 git fetch --no-tags official refs/heads/master:refs/remotes/official/master
 
+mirror_tags=$(mktemp)
+upstream_tags=$(mktemp)
+trap 'rm -f "$mirror_tags" "$upstream_tags"' EXIT
+list_tags() {
+    git ls-remote --tags "$1" |
+        awk '$2 !~ /\^\{\}$/ {
+            name = $2
+            sub("^refs/tags/", "", name)
+            print name "\t" $1
+        }' |
+        LC_ALL=C sort
+}
+list_tags origin > "$mirror_tags"
+list_tags official > "$upstream_tags"
+if ! diff -u "$mirror_tags" "$upstream_tags"; then
+    echo "Official Zip-Ada tag refs require manual mirror review" >&2
+    exit 1
+fi
+echo "Mirror tag refs match official upstream (currently none)"
+
 mirror_commit=$(git rev-parse refs/remotes/origin/master)
 upstream_commit=$(git rev-parse refs/remotes/official/master)
 
