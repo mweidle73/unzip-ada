@@ -36,11 +36,12 @@ Run the complete build and archive round-trip check from the repository root:
 .github/ci/run .github/ci/check
 ```
 
-The check builds every main in `zipada.gpr`, creates an archive with Zip-Ada,
+The check builds every production main in `zipada.gpr`, builds the two archive
+round-trip demos from `zipada_test.gpr`, creates an archive with Zip-Ada,
 validates and extracts it with Debian's independent `unzip` implementation,
-and then exercises Zip-Ada's own extraction path. The historical revision has
-no central assertion-based unit-test runner; its test programs are mostly
-interactive, fixture-dependent or output-only. CI therefore treats the full
+and then exercises Zip-Ada's own extraction path. The revision has no central
+assertion-based unit-test runner; its test programs are mostly interactive,
+fixture-dependent or output-only. CI therefore treats the full production
 compile plus the independent archive round trip as its automated gate rather
 than overstating those programs as a modern unit suite.
 
