@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Render the historical Zip-Ada text as a structured static site."""
+"""Render Zip-Ada's maintained text documentation as a static site."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def linked_text(value: str) -> str:
 
 
 def render_blocks(lines: list[str]) -> str:
-    """Render paragraphs and the simple bullet syntax used by zipada.txt."""
+    """Render paragraphs and the simple syntax used by doc/zipada.txt."""
     output: list[str] = []
     paragraph: list[str] = []
     items: list[str] = []
@@ -137,12 +137,14 @@ def parse_sections(text: str) -> list[tuple[str, list[str]]]:
 
 def main() -> int:
     output_dir = Path(sys.argv[1] if len(sys.argv) > 1 else ".github/build/pages")
-    source = Path("zipada.txt")
+    source = Path("doc/zipada.txt")
     text = source.read_bytes().decode("iso-8859-1")
     sections = parse_sections(text)
 
     if len(sections) < 5:
-        raise RuntimeError("zipada.txt did not yield the expected section structure")
+        raise RuntimeError(
+            f"{source} did not yield the expected section structure"
+        )
 
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -208,7 +210,7 @@ footer{{padding:1.5rem;text-align:center;color:var(--muted);border-top:1px solid
 <nav aria-label="Documentation sections"><h2>On this page</h2><ul>{navigation}</ul></nav>
 <main>{content}</main>
 </div>
-<footer>Generated from the preserved <code>zipada.txt</code> documentation without modifying its source.</footer>
+<footer>Generated from <code>doc/zipada.txt</code> without modifying its source.</footer>
 </body>
 </html>
 """

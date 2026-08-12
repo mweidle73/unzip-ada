@@ -8,9 +8,9 @@ Its long-lived branches have distinct roles:
   the revision that Abuild historically pinned.
 - `master` is an exact, automatically fast-forwarded mirror of official
   Zip-Ada `master`.
-- `abuild` is the official-history equivalent of that historical Abuild
-  revision. Its source tree is byte-identical to legacy commit `fea70c4`, so
-  Abuild can move its gitlink without changing the consumed source.
+- `abuild` records the official-history revision currently selected and
+  verified by Abuild. Its first commit was tree-identical to legacy commit
+  `fea70c4`; later fast-forwards follow reviewed Abuild dependency updates.
 - `abuild-gh` adds only files below `.github/` to `abuild`.
 
 The weekly `Upstream Sync` workflow compares the two `master` branches and
@@ -57,11 +57,11 @@ override the default `none` network mode.
 
 ## Documentation
 
-The historical `zipada.txt` file is ISO-8859-1 text rather than valid modern
-AsciiDoc. `build-pages` decodes it explicitly, recognizes its underlined
-sections and simple lists, and publishes structured, navigable HTML without
-changing the preserved source revision. The original byte stream remains
-available as a separate download:
+The maintained `doc/zipada.txt` file is ISO-8859-1 text rather than valid
+modern AsciiDoc. `build-pages` decodes it explicitly, recognizes its
+underlined sections and simple lists, and publishes structured, navigable
+HTML without changing the source. The original byte stream remains available
+as a separate download:
 
 ```sh
 .github/ci/build-pages
